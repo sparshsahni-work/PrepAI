@@ -5,7 +5,7 @@ import Protected from "./features/auth/components/Protected";
 import Home from "./features/interview/pages/Home";
 import Interview from "./features/interview/pages/Interview";
 import Apply from "./features/jobs/pages/Apply";
-import Landing from "./pages/Landing";
+import Landing from "./Pages/Landing";
 
 export const router = createBrowserRouter([
   {
