@@ -6,7 +6,7 @@ import {
   HelpCenter,
 } from "../features/interview/components/FooterContent";
 import "./Landing.scss";
-import Logo from "../assets/Logo.png";
+import Logo from "../Assets/Logo.png";
 
 const Landing = () => {
   const navigate = useNavigate();
