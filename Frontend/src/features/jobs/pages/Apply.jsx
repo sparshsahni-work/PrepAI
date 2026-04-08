@@ -22,7 +22,7 @@ const Apply = () => {
 
     try {
       const res = await axios.post(
-        "http://localhost:3000/api/v1/jobs",
+        `${import.meta.env.VITE_BACKEND_URL}/api/v1/jobs`,
         formData,
         { withCredentials: true },
       );
