@@ -1,101 +1,119 @@
-
-// const pdfParse = require("pdf-parse/lib/pdf-parse")
 const pdfParse = require("pdf-parse")
 const axios = require("axios")
 const cheerio = require("cheerio")
 
-
-
-
+const browserHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/html, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 /* -------------------------------
    1. Extract Keywords
 --------------------------------*/
 function extractKeywords(text) {
-    const stopWords = ["with", "from", "that", "this", "have", "your"]
+    const stopWords = [
+        "with", "from", "that", "this", "have", "your", "about", "which",
+        "their", "there", "where", "these", "those", "would", "could",
+        "should", "other", "after", "before", "while", "since", "email",
+        "phone", "linkedin", "github", "references", "available", "request",
+        "university", "college", "institute", "cgpa", "score", "standard",
+        "ongoing", "bachelor", "master", "degree"
+    ]
 
-    return text
+    // extract skill-like words (technical, meaningful)
+    const words = text
         .toLowerCase()
         .split(/\W+/)
-        .filter(word => word.length > 4 && !stopWords.includes(word))
-        .slice(0, 8)
-        .join(" ")
+        .filter(word =>
+            word.length > 3 &&
+            !stopWords.includes(word) &&
+            isNaN(word) // remove pure numbers
+        )
+
+    // count word frequency
+    const freq = {}
+    words.forEach(w => { freq[w] = (freq[w] || 0) + 1 })
+
+    // sort by frequency, take top 6
+    const topWords = Object.entries(freq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([word]) => word)
+
+    return topWords.join(" ")
 }
 
 /* -------------------------------
    2. API Jobs (Remotive)
 --------------------------------*/
 async function fetchApiJobs(query) {
-    const res = await axios.get(`https://remotive.com/api/remote-jobs?search=${query}`)
+    const res = await axios.get(
+        `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}&limit=20`,
+        { headers: browserHeaders, timeout: 10000 }
+    )
 
-    return res.data.jobs.slice(0, 15).map(job => ({
+    return res.data.jobs.slice(0, 20).map(job => ({
         title: job.title,
         company: job.company_name,
         url: job.url,
-        type: job.title.toLowerCase().includes("intern")
-            ? "Internship"
-            : job.job_type,
-        source: "API"
+        type: job.title.toLowerCase().includes("intern") ? "Internship" : job.job_type,
+        source: "Remotive"
     }))
 }
 
 /* -------------------------------
-   3. Scraped Jobs (Arbeitnow)
+   3. Arbeitnow API
 --------------------------------*/
-async function scrapeJobs() {
-    const res = await axios.get("https://www.arbeitnow.com/api/job-board-api")
+async function fetchArbeitnowJobs() {
+    const res = await axios.get(
+        "https://www.arbeitnow.com/api/job-board-api",
+        { headers: browserHeaders, timeout: 10000 }
+    )
 
-    return res.data.data.slice(0, 15).map(job => ({
+    return res.data.data.slice(0, 20).map(job => ({
         title: job.title,
         company: job.company_name,
         url: job.url,
-        type: job.title.toLowerCase().includes("intern")
-            ? "Internship"
-            : "Job",
-        source: "Arbeitnow API"
+        type: job.title.toLowerCase().includes("intern") ? "Internship" : "Job",
+        source: "Arbeitnow"
     }))
 }
 
 /* -------------------------------
-   4. Merge + Remove Duplicates
+   4. RemoteOK API
 --------------------------------*/
-function mergeJobs(apiJobs, scrapedJobs) {
-    const map = new Map()
+async function fetchRemoteOKJobs() {
+    const res = await axios.get(
+        "https://remoteok.com/api",
+        {
+            headers: {
+                ...browserHeaders,
+                "Accept": "application/json",
+            },
+            timeout: 10000
+        }
+    )
 
-        ;[...apiJobs, ...scrapedJobs].forEach(job => {
-            const key = (job.title + job.company).toLowerCase()
-            if (!map.has(key)) {
-                map.set(key, job)
-            }
-        })
-
-    return Array.from(map.values())
+    return res.data.slice(1, 20)
+        .filter(job => job.position && job.company)
+        .map(job => ({
+            title: job.position,
+            company: job.company,
+            url: job.url,
+            type: job.position.toLowerCase().includes("intern") ? "Internship" : "Job",
+            source: "RemoteOK"
+        }))
 }
 
-
-
-function rankJobs(jobs, keywords) {
-    return jobs.sort((a, b) => {
-        const scoreA = keywords.split(" ")
-            .filter(k => a.title.toLowerCase().includes(k)).length
-
-        const scoreB = keywords.split(" ")
-            .filter(k => b.title.toLowerCase().includes(k)).length
-
-        return scoreB - scoreA
-    })
-
-}
-
-
-/*-------------------------------
-Web Scraping Example (WeWorkRemotely)
--------------------------------*/
-
-
-
-async function scrapeWeWorkRemotely() {
-    const { data } = await axios.get("https://weworkremotely.com/remote-jobs")
+/* -------------------------------
+   5. WeWorkRemotely Scraper
+--------------------------------*/
+async function fetchWeWorkRemotelyJobs() {
+    const { data } = await axios.get(
+        "https://weworkremotely.com/remote-jobs",
+        { headers: browserHeaders, timeout: 10000 }
+    )
 
     const $ = cheerio.load(data)
     const jobs = []
@@ -111,96 +129,115 @@ async function scrapeWeWorkRemotely() {
                 company,
                 url: `https://weworkremotely.com${link}`,
                 type: title.toLowerCase().includes("intern") ? "Internship" : "Job",
-                source: "WeWorkRemotely (Scraped)"
+                source: "WeWorkRemotely"
             })
         }
     })
 
-    return jobs.slice(0, 15)
+    return jobs.slice(0, 20)
 }
 
+/* -------------------------------
+   6. Merge + Remove Duplicates
+--------------------------------*/
+function mergeJobs(...jobArrays) {
+    const map = new Map()
 
+    jobArrays.flat().forEach(job => {
+        if (!job || !job.title || !job.company) return
+        const key = (job.title + job.company).toLowerCase().replace(/\s+/g, "")
+        if (!map.has(key)) {
+            map.set(key, job)
+        }
+    })
 
+    return Array.from(map.values())
+}
 
-async function scrapeRemoteOK() {
-    const res = await axios.get("https://remoteok.com/api")
+/* -------------------------------
+   7. Rank Jobs by Keywords
+--------------------------------*/
+function rankJobs(jobs, keywords) {
+    const keywordList = keywords.split(" ")
 
-    return res.data.slice(1, 20).map(job => ({
-        title: job.position,
-        company: job.company,
-        url: job.url,
-        type: job.position.toLowerCase().includes("intern") ? "Internship" : "Job",
-        source: "RemoteOK"
-    }))
+    return jobs.sort((a, b) => {
+        const scoreA = keywordList.filter(k =>
+            a.title.toLowerCase().includes(k)
+        ).length
+
+        const scoreB = keywordList.filter(k =>
+            b.title.toLowerCase().includes(k)
+        ).length
+
+        return scoreB - scoreA
+    })
 }
 
 /* -------------------------------
    MAIN CONTROLLER
 --------------------------------*/
-
 async function getJobsController(req, res) {
     try {
-        // ✅ 1. File validation
         if (!req.file) {
             return res.status(400).json({ message: "Resume required" })
         }
 
         console.log("File received:", req.file.originalname)
 
-        // ✅ 2. Parse PDF safely
         let pdfData
-
         try {
-
             pdfData = await (new pdfParse.PDFParse(Uint8Array.from(req.file.buffer))).getText()
-            console.log("pdfData:", pdfData)
-            console.log("pdfData type:", typeof pdfData)
         } catch (err) {
             console.error("PDF Parse Error:", err)
             return res.status(400).json({ message: "Invalid PDF file" })
         }
 
         if (!pdfData || !pdfData.text) {
-            return res.status(400).json({
-                message: "Failed to extract text from resume"
-            })
+            return res.status(400).json({ message: "Failed to extract text from resume" })
         }
 
         const resumeText = pdfData.text
-            .replace(/\s+/g, " ")   // remove tabs, newlines
-            .replace(/-- \d+ of \d+ --/g, "") // remove page markers
+            .replace(/\s+/g, " ")
+            .replace(/-- \d+ of \d+ --/g, "")
             .trim()
 
         if (!resumeText || resumeText.split(" ").length < 10) {
-            return res.status(400).json({
-                message: "Resume text extraction failed"
-            })
+            return res.status(400).json({ message: "Resume text extraction failed" })
         }
 
         console.log("Extracted text:", resumeText.slice(0, 200))
 
-        // ✅ 3. Extract keywords
         const keywords = extractKeywords(resumeText)
         console.log("Keywords:", keywords)
 
-        // ✅ 4. Fetch jobs (parallel)
+        // Fetch all sources in parallel — failures won't crash the request
         const results = await Promise.allSettled([
-            fetchApiJobs(keywords),        // Remotive
-            scrapeJobs(),                  // Arbeitnow API
-            scrapeWeWorkRemotely(),        // Cheerio scraping
-            scrapeRemoteOK()               // JSON scraping
+            fetchApiJobs(keywords),
+            fetchArbeitnowJobs(),
+            fetchRemoteOKJobs(),
+            fetchWeWorkRemotelyJobs(),
         ])
+
+        // Log which sources succeeded/failed
+        const sourceNames = ["Remotive", "Arbeitnow", "RemoteOK", "WeWorkRemotely"]
+        results.forEach((r, i) => {
+            if (r.status === "fulfilled") {
+                console.log(`✅ ${sourceNames[i]}: ${r.value.length} jobs`)
+            } else {
+                console.log(`❌ ${sourceNames[i]} failed:`, r.reason?.message)
+            }
+        })
 
         const allJobs = results
             .filter(r => r.status === "fulfilled")
             .flatMap(r => r.value)
 
-        console.log("Total sources fetched:", allJobs.length)
+        console.log("Total jobs before dedup:", allJobs.length)
 
-        // ✅ 5. Merge
-        let jobs = mergeJobs(allJobs, [])
+        let jobs = mergeJobs(allJobs)
         jobs = rankJobs(jobs, keywords)
-        console.log("Final Jobs:", jobs.length)
+
+        console.log("Final Jobs after dedup + rank:", jobs.length)
 
         res.json({ jobs })
 
