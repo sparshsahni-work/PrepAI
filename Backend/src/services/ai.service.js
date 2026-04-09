@@ -68,7 +68,7 @@ async function generatePdfFromHtml(htmlContent) {
         ]
     })
     const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: "networkidle0" })
+    await page.setContent(htmlContent, { waitUntil: "domcontentloaded", timeout: 60000 })
 
     const pdfBuffer = await page.pdf({
         format: "A4", margin: {
@@ -104,7 +104,7 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
                     `
 
     const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: prompt,
         config: {
             responseMimeType: "application/json",
