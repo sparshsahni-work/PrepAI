@@ -40,7 +40,7 @@ function extractJobTitle(text) {
         }
     }
 
-    return skills[0] || "software engineer"
+    return  "software engineer"
 }
 
 /* -------------------------------
