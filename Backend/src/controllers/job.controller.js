@@ -27,6 +27,10 @@ function extractJobTitle(text) {
 
     for (const line of lines) {
         const lower = line.toLowerCase()
+        // ✅ Skip ALL CAPS lines (names) and lines with email/phone
+        if (line === line.toUpperCase()) continue
+        if (lower.includes("@") || lower.includes("http") || lower.includes("+")) continue
+
         if (titleKeywords.some(k => lower.includes(k))) {
             return line
                 .replace(/[|•\-–]/g, " ")
@@ -36,7 +40,7 @@ function extractJobTitle(text) {
         }
     }
 
-    return text.split(/\s+/).slice(0, 3).join(" ")
+    return skills[0] || "software engineer"
 }
 
 /* -------------------------------
